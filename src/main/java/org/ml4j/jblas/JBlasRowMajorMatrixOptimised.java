@@ -87,7 +87,7 @@ public class JBlasRowMajorMatrixOptimised extends JBlasRowMajorMatrix {
 	public static FloatMatrix gemm(float alpha, FloatMatrix a,
 			FloatMatrix b, float beta, FloatMatrix c, int cOffset) {
 		BLAS.getInstance().sgemm("N", "N", c.rows, c.columns, a.columns, alpha, a.data, 0,
-				a.rows, b.data, 0, b.rows, beta, c.data, 0, c.rows);
+				a.rows, b.data, 0, b.rows, beta, c.data, cOffset, c.rows);
 		return c;
 	}
 }
