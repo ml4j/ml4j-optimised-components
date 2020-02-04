@@ -46,15 +46,12 @@ public class JBlasRowMajorMatrixOptimised extends JBlasRowMajorMatrix {
 	 */
 	@Override
 	public Matrix mmul(Matrix other) {
-		FloatMatrix otherMatrix = createJBlasFloatMatrix(other);
-		FloatMatrix thisMatrix = this.matrix;
-		float[] cdata = floatArrayFactory.createFloatArray(other.getColumns() * getRows());
-		FloatMatrix c = floatMatrixFactory.create(other.getColumns(), getRows(), cdata);
 		float alpha = 1f;
 		float beta =1f;
 		int resultOffset = 0;
-		FloatMatrix result = gemm(alpha, otherMatrix, thisMatrix, beta, c, resultOffset);
-		return createJBlasMatrix(result, false);
+		Matrix target = jblasRowMajorMatrixFactory.createMatrix(getRows(), other.getColumns());
+		Matrix result = gemm(alpha, this, other, beta, target, resultOffset);
+		return result;
 	}
 	
 	/**
@@ -62,14 +59,11 @@ public class JBlasRowMajorMatrixOptimised extends JBlasRowMajorMatrix {
 	 */
 	@Override
 	public Matrix mmul(Matrix other, Matrix target) {
-		FloatMatrix otherMatrix = createJBlasFloatMatrix(other);
-		FloatMatrix targetMatrix = createJBlasFloatMatrix(target);
-		FloatMatrix thisMatrix = this.matrix;
 		float alpha = 1f;
 		float beta =1f;
 		int resultOffset = 0;
-		FloatMatrix result = gemm(alpha, otherMatrix, thisMatrix, beta, targetMatrix, resultOffset);
-		return createJBlasMatrix(result, false);
+		Matrix result = gemm(alpha, other, this, beta, target, resultOffset);
+		return result;
 	}
 
 	/**
@@ -90,4 +84,44 @@ public class JBlasRowMajorMatrixOptimised extends JBlasRowMajorMatrix {
 				a.rows, b.data, 0, b.rows, beta, c.data, cOffset, c.rows);
 		return c;
 	}
+	
+
+	/**
+	 * Compute c <- alpha * a*b + beta * c (general matrix matrix
+	 * multiplication)
+	 * 
+	 * @param alpha
+	 * @param a
+	 * @param b
+	 * @param beta
+	 * @param c
+	 * @param cOffset
+	 * @return
+	 */
+	public static Matrix gemm(float alpha, Matrix a,
+			Matrix b, float beta, Matrix c, int cOffset) {
+		BLAS.getInstance().sgemm("N", "N", c.getColumns(), c.getRows(), b.getRows(), alpha, b.getRowByRowArray(), 0,
+				b.getColumns(), a.getRowByRowArray(), 0, a.getColumns(), beta, c.getRowByRowArray(), cOffset, c.getColumns());
+		return c;
+	}
+	
+	/**
+	 * Compute c <- alpha * a*b + beta * c (general matrix matrix
+	 * multiplication)
+	 * 
+	 * @param alpha
+	 * @param a
+	 * @param b
+	 * @param beta
+	 * @param c
+	 * @param cOffset
+	 * @return
+	 */
+	public static FloatArrayMatrix gemm(float alpha, FloatArrayMatrix a,
+			FloatArrayMatrix b, float beta, FloatArrayMatrix c) {
+		BLAS.getInstance().sgemm("N", "N", c.getColumns(), c.getRows(), b.getRows(), alpha, b.getRowByRowArray(), b.getOffset(),
+				b.getColumns(), a.getRowByRowArray(), a.getOffset(), a.getColumns(), beta, c.getRowByRowArray(), c.getOffset(), c.getColumns());
+		return c;
+	}
+	
 }
