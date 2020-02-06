@@ -17,5 +17,4 @@ public class FloatArray {
 	public int getOffset() {
 		return offset;
 	}
-	
 }

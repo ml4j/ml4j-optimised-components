@@ -1,6 +1,5 @@
 package org.ml4j.nn.axons;
 
-import org.ml4j.Matrix;
 import org.ml4j.MatrixFactory;
 import org.ml4j.nn.factories.DefaultAxonsFactoryImpl;
 import org.ml4j.nn.neurons.Neurons3D;
@@ -18,7 +17,7 @@ public class LowMemoryOptimisedDefaultAxonsFactoryImpl extends DefaultAxonsFacto
 
 	@Override
 	public ConvolutionalAxons createConvolutionalAxons(Neurons3D leftNeurons, Neurons3D rightNeurons,
-			Axons3DConfig config, Matrix connectionWeights, Matrix biases) {
+			Axons3DConfig config, WeightsMatrix connectionWeights, BiasMatrix biases) {
 		int inputWidth = leftNeurons.getWidth();
 		int inputHeight = leftNeurons.getHeight();
 		int outputWidth = rightNeurons.getWidth();
