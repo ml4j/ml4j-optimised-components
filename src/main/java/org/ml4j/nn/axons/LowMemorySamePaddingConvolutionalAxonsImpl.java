@@ -13,6 +13,7 @@
  */
 package org.ml4j.nn.axons;
 
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -21,8 +22,8 @@ import org.ml4j.MatrixFactory;
 import org.ml4j.images.Images;
 import org.ml4j.images.MultiChannelImages;
 import org.ml4j.jblas.FloatArray;
-import org.ml4j.jblas.FloatArrayMatrix;
 import org.ml4j.jblas.JBlasRowMajorMatrixOptimised;
+import org.ml4j.jblas.RowMajorFloatArrayMatrix;
 import org.ml4j.nn.neurons.ImageNeuronsActivation;
 import org.ml4j.nn.neurons.ImageNeuronsActivationImpl;
 import org.ml4j.nn.neurons.Neurons;
@@ -31,6 +32,8 @@ import org.ml4j.nn.neurons.NeuronsActivation;
 import org.ml4j.nn.neurons.NeuronsActivationImpl;
 import org.ml4j.nn.neurons.format.ImageNeuronsActivationFormat;
 import org.ml4j.nn.neurons.format.NeuronsActivationFormat;
+import org.ml4j.nn.neurons.format.features.Dimension;
+import org.ml4j.nn.neurons.format.features.DimensionScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,47 +64,14 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 		this.rightNeurons = rightNeurons;
 		this.config = config;
 		this.weights = weights;
-
 	}
 
 	public LowMemorySamePaddingConvolutionalAxonsImpl(MatrixFactory matrixFactory, Neurons3D leftNeurons, Neurons3D rightNeurons,
-			Axons3DConfig config, Matrix connectionWeights, Matrix leftToRightBiases, Matrix rightToLeftBiases) {
-		super();
+			Axons3DConfig config, WeightsMatrix connectionWeights, BiasMatrix leftToRightBiases, BiasMatrix rightToLeftBiases) {
 		this.leftNeurons = leftNeurons;
 		this.rightNeurons = rightNeurons;
 		this.config = config;
-		int inputWidth = leftNeurons.getWidth();
-		int inputHeight = leftNeurons.getHeight();
-		int outputWidth = rightNeurons.getWidth();
-		int outputHeight = rightNeurons.getHeight();
-
-		int inputWidthWithPadding = inputWidth + config.getPaddingWidth() * 2;
-
-		int inputHeightWithPadding = inputHeight + config.getPaddingHeight() * 2;
-		int filterWidth = inputWidthWithPadding + (1 - outputWidth) * (config.getStrideWidth());
-
-		int filterHeight = inputHeightWithPadding + (1 - outputHeight) * (config.getStrideHeight());
-
-		AxonWeightsInitialiser axonWeightsInitialiser = new DefaultFullyConnectedAxonWeightsInitialiser(
-				new Neurons(filterWidth * filterHeight * leftNeurons.getDepth(), leftNeurons.hasBiasUnit()),
-				new Neurons(rightNeurons.getDepth(), rightNeurons.hasBiasUnit()));
-
-		Matrix initialConnectionWeights = connectionWeights == null
-				? axonWeightsInitialiser.getInitialConnectionWeights(matrixFactory)
-				: connectionWeights;
-		Optional<Matrix> initialLeftToRightBiases = leftToRightBiases == null
-				? axonWeightsInitialiser.getInitialLeftToRightBiases(matrixFactory)
-				: Optional.of(leftToRightBiases);
-		Optional<Matrix> initialRightToLeftBiases = rightToLeftBiases == null
-				? axonWeightsInitialiser.getInitialRightToLeftBiases(matrixFactory)
-				: Optional.of(rightToLeftBiases);
-
-		this.weights = new FullyConnectedAxonWeightsImpl(filterWidth * filterHeight * leftNeurons.getDepth(),
-				rightNeurons.getDepth(), initialConnectionWeights,
-				leftNeurons.hasBiasUnit() && initialLeftToRightBiases.isPresent() ? initialLeftToRightBiases.get()
-						: null,
-				rightNeurons.hasBiasUnit() && initialRightToLeftBiases.isPresent() ? initialRightToLeftBiases.get()
-						: null);
+		this.weights = createInitialAxonWeights(matrixFactory, connectionWeights, leftToRightBiases, rightToLeftBiases);
 	}
 
 	@Override
@@ -144,13 +114,12 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 		int filterHeight = inputHeightWithPadding + (1 - outputHeight) * (config.getStrideHeight());
 
 		final NeuronsActivation reformatted;
-		ImageNeuronsActivation imageAct = leftNeuronsActivation.asImageNeuronsActivation(leftNeurons);
+		ImageNeuronsActivation imageAct = leftNeuronsActivation.asImageNeuronsActivation(leftNeurons, DimensionScope.INPUT);
 		reformatted = new NeuronsActivationImpl(
 				new Neurons(leftNeurons.getDepth() * filterWidth * filterHeight, leftNeurons.hasBiasUnit()),
 				imageAct.im2ColConv(matrixFactory, filterHeight, filterWidth, config.getStrideHeight(),
 						config.getStrideWidth(), config.getPaddingHeight(), config.getPaddingWidth()),
-				// TODO Format
-				ImageNeuronsActivationFormat.ML4J_DEFAULT_IMAGE_FORMAT);
+				ImageNeuronsActivationFormat.ML4J_IM_TO_COL_CONV_FORMAT);
 		if (!imageAct.isImmutable()) {
 			imageAct.close();
 		}
@@ -175,8 +144,8 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 		Supplier<NeuronsActivation> postDropoutInput = () -> getPostDropoutInput(inputMatrix, exampleCount,
 				axonsContext);
 
-		Matrix kernelMatrix = weights.getConnectionWeights();
-		Matrix biasMatrix = weights.getLeftToRightBiases();
+		Matrix kernelMatrix = weights.getConnectionWeights().getWeights();
+		Matrix biasMatrix = weights.getLeftToRightBiases() == null ? null : weights.getLeftToRightBiases().getWeights();
 
 		ImageNeuronsActivation convolution = performConvolution(inputMatrix, axonsContext, kernelMatrix, biasMatrix,
 				leftNeurons, rightNeurons);
@@ -212,7 +181,7 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 
 		NeuronsActivation inputMat = inputMatrix;
 
-		FloatArrayMatrix k = null;
+		RowMajorFloatArrayMatrix k = null;
 		int targetOffset = 0;
 		float[] inputData = null;
 		float alpha = 1f;
@@ -239,7 +208,7 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 				row.asEditableMatrix().reshape(outputChannels, inputChannels);
 				Matrix row2 = row;
 				kData = row2.getRowByRowArray();
-				k = new FloatArrayMatrix(new FloatArray(kData, 0), outputChannels, inputChannels);
+				k = new RowMajorFloatArrayMatrix(new FloatArray(kData, 0), outputChannels, inputChannels);
 
 				Matrix mat = inputMatDup;
 
@@ -272,11 +241,11 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 					int targetOffsetAdjNegated = -targetOffsetAdj;
 					targetOffset = targetOffsetAdjNegated + delta * (inputWidth * inputHeight * examples);
 
-					FloatArrayMatrix b = new FloatArrayMatrix(new FloatArray(inputData, 0), inputChannels,
+					RowMajorFloatArrayMatrix b = new RowMajorFloatArrayMatrix(new FloatArray(inputData, 0), inputChannels,
 							inputWidth * inputHeight * examples);
 
 					JBlasRowMajorMatrixOptimised.gemm(alpha, k, b, beta,
-							new FloatArrayMatrix(new FloatArray(targetData, targetOffset), outputChannels,
+							new RowMajorFloatArrayMatrix(new FloatArray(targetData, targetOffset), outputChannels,
 									inputWidth * inputHeight * examples));
 
 					if (rowS != null) {
@@ -298,7 +267,6 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 		LOGGER.debug("End left to right pushing through FC axons");
 
 		LOGGER.debug("End Pushing left to right through Conv axons");
-		// TODO
 		if (leftNeurons.hasBiasUnit() && biasMatrix != null) {
 			return createOutputActivationByCopyingData(axonsContext.getMatrixFactory(), targetData, inputWidth,
 					inputHeight, outputChannels, examples, delta, biasMatrix);
@@ -403,10 +371,11 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 	public AxonsActivation pushRightToLeft(NeuronsActivation rightNeuronsActivation,
 			AxonsActivation previousLeftToRightActivation, AxonsContext axonsContext) {
 
+		
 		Matrix kernelMatrix = getReversedKernel(axonsContext.getMatrixFactory(), leftNeurons, rightNeurons,
-				weights.getConnectionWeights(), config.getPaddingWidth(), config.getPaddingHeight(),
+				weights.getConnectionWeights().getWeights(), config.getPaddingWidth(), config.getPaddingHeight(),
 				config.getStrideWidth(), config.getStrideHeight());
-		Matrix biasMatrix = weights.getRightToLeftBiases();
+		Matrix biasMatrix = weights.getRightToLeftBiases() == null ? null : weights.getRightToLeftBiases().getWeights();
 
 		ImageNeuronsActivation convolution = performConvolution(rightNeuronsActivation, axonsContext, kernelMatrix,
 				biasMatrix, rightNeurons, leftNeurons);
@@ -414,7 +383,7 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 		reformatRightToLeftInput(axonsContext.getMatrixFactory(), rightNeuronsActivation);
 
 		rightNeuronsActivation.setImmutable(true);
-
+		
 		return new AxonsActivationImpl(this, null, () -> rightNeuronsActivation, convolution);
 	}
 
@@ -437,25 +406,17 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 		int inputHeightWithPadding = leftNeurons.getHeight() + paddingHeight * 2;
 		int filterWidth = inputWidthWithPadding + (1 - rightNeurons.getWidth()) * (strideWidth);
 		int filterHeight = inputHeightWithPadding + (1 - rightNeurons.getHeight()) * (strideHeight);
-		// System.out.println(leftNeurons.getDepth() + ":" + leftNeurons.getWidth() +
-		// ":" + leftNeurons.getHeight() + ":" + leftNeurons.getWidth());
-		// System.out.println(rightNeurons.getDepth() + ":" + rightNeurons.getWidth() +
-		// ":" + rightNeurons.getHeight() + ":" + rightNeurons.getWidth());
 
 		for (int o = 0; o < rightNeurons.getDepth(); o++) {
 			for (int i = 0; i < leftNeurons.getDepth(); i++) {
 				int start1 = o * leftNeurons.getDepth() * filterWidth * filterHeight + i * filterWidth * filterHeight;
 				int start2 = i * rightNeurons.getDepth() * filterWidth * filterHeight + o * filterWidth * filterHeight;
 
-				int end1 = start1 + filterHeight * filterWidth - 1;
 				int end2 = start2 + filterHeight * filterWidth - 1;
 
 				for (int h = 0; h < filterHeight; h++) {
 					for (int w = 0; w < filterWidth; w++) {
 						int offset = h * filterWidth + w;
-						// System.out.println((start1 + offset) + ":" + (end1 - offset));
-						// System.out.println((start2 + offset) + ":" + (end2- offset));
-
 						reversedData[start1 + offset] = data[end2 - offset];
 					}
 				}
@@ -463,11 +424,53 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 		}
 		return matrixFactory.createMatrixFromRowsByRowsArray(kernel.getRows(), kernel.getColumns(), reversedData);
 	}
+	
+	private AxonWeights createInitialAxonWeights(MatrixFactory matrixFactory, WeightsMatrix connectionWeights, BiasMatrix leftToRightBiases, BiasMatrix rightToLeftBiases) {
+		int inputWidth = leftNeurons.getWidth();
+		int inputHeight = leftNeurons.getHeight();
+		int outputWidth = rightNeurons.getWidth();
+		int outputHeight = rightNeurons.getHeight();
+		
+		if (connectionWeights == null) {
+			throw new IllegalArgumentException("WeightsMatrix cannot be null");
+		}
+
+		int inputWidthWithPadding = inputWidth + config.getPaddingWidth() * 2;
+
+		int inputHeightWithPadding = inputHeight + config.getPaddingHeight() * 2;
+		int filterWidth = inputWidthWithPadding + (1 - outputWidth) * (config.getStrideWidth());
+
+		int filterHeight = inputHeightWithPadding + (1 - outputHeight) * (config.getStrideHeight());
+
+		AxonWeightsInitialiser axonWeightsInitialiser = new DefaultFullyConnectedAxonWeightsInitialiser(
+				new Neurons(filterWidth * filterHeight * leftNeurons.getDepth(), leftNeurons.hasBiasUnit()),
+				new Neurons(rightNeurons.getDepth(), rightNeurons.hasBiasUnit()));
+
+		Matrix initialConnectionWeights = connectionWeights.getWeights() == null
+				? axonWeightsInitialiser.getInitialConnectionWeights(matrixFactory)
+				: connectionWeights.getWeights();
+		Optional<Matrix> initialLeftToRightBiases = leftToRightBiases == null
+				? axonWeightsInitialiser.getInitialLeftToRightBiases(matrixFactory)
+				: Optional.of(leftToRightBiases.getWeights());
+		Optional<Matrix> initialRightToLeftBiases = rightToLeftBiases == null
+				? axonWeightsInitialiser.getInitialRightToLeftBiases(matrixFactory)
+				: Optional.of(rightToLeftBiases.getWeights());
+
+		return new FullyConnectedAxonWeightsImpl(filterWidth * filterHeight * leftNeurons.getDepth(),
+				rightNeurons.getDepth(), 
+				new WeightsMatrixImpl(initialConnectionWeights,
+						new WeightsFormatImpl(
+				Arrays.asList(Dimension.INPUT_DEPTH, Dimension.FILTER_HEIGHT, Dimension.FILTER_WIDTH), Arrays.asList(Dimension.OUTPUT_DEPTH),
+				WeightsMatrixOrientation.ROWS_SPAN_OUTPUT_DIMENSIONS)),
+				leftNeurons.hasBiasUnit() && initialLeftToRightBiases.isPresent() ? new BiasMatrixImpl(initialLeftToRightBiases.get())
+						: null,
+				rightNeurons.hasBiasUnit() && initialRightToLeftBiases.isPresent() ? new BiasMatrixImpl(initialRightToLeftBiases.get())
+						: null);
+	}
 
 	@Override
 	public ConvolutionalAxons dup() {
-		// TODO config.dup()
-		return new LowMemorySamePaddingConvolutionalAxonsImpl(leftNeurons, rightNeurons, weights, config);
+		return new LowMemorySamePaddingConvolutionalAxonsImpl(leftNeurons, rightNeurons, weights, config.dup());
 	}
 
 	@Override

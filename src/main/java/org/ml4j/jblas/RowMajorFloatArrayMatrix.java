@@ -1,8 +1,6 @@
 package org.ml4j.jblas;
 
-import org.jblas.FloatMatrix;
-
-public class FloatArrayMatrix {
+public class RowMajorFloatArrayMatrix {
 
 	private FloatArray floatArray;
 	private int rows;
@@ -12,13 +10,7 @@ public class FloatArrayMatrix {
 		return floatArray.getData();
 	}
 	
-	public FloatArrayMatrix(FloatMatrix floatMatrix) {
-		this.floatArray = new FloatArray(floatMatrix.data, 0);
-		this.rows = floatMatrix.getRows();
-		this.columns = floatMatrix.getColumns();
-	}
-	
-	public FloatArrayMatrix(FloatArray floatArray, int rows, int columns) {
+	public RowMajorFloatArrayMatrix(FloatArray floatArray, int rows, int columns) {
 		this.floatArray = floatArray;
 		this.rows = rows;
 		this.columns = columns;
