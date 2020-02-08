@@ -1,3 +1,4 @@
+
 /*
  * Copyright 2020 the original author or authors.
  *
@@ -13,29 +14,20 @@
  */
 package org.ml4j.nn.axons;
 
-import java.util.Arrays;
 import java.util.Optional;
 import java.util.function.Supplier;
 
 import org.ml4j.Matrix;
 import org.ml4j.MatrixFactory;
-import org.ml4j.images.Images;
-import org.ml4j.images.MultiChannelImages;
-import org.ml4j.jblas.FloatArray;
-import org.ml4j.jblas.JBlasRowMajorMatrixOptimised;
-import org.ml4j.jblas.RowMajorFloatArrayMatrix;
 import org.ml4j.nn.neurons.ImageNeuronsActivation;
-import org.ml4j.nn.neurons.ImageNeuronsActivationImpl;
 import org.ml4j.nn.neurons.Neurons;
 import org.ml4j.nn.neurons.Neurons3D;
 import org.ml4j.nn.neurons.NeuronsActivation;
+import org.ml4j.nn.neurons.NeuronsActivationFeatureOrientation;
 import org.ml4j.nn.neurons.NeuronsActivationImpl;
 import org.ml4j.nn.neurons.format.ImageNeuronsActivationFormat;
 import org.ml4j.nn.neurons.format.NeuronsActivationFormat;
-import org.ml4j.nn.neurons.format.features.Dimension;
 import org.ml4j.nn.neurons.format.features.DimensionScope;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Prototype experimental implementation of k2r-aa convolutional method from 
@@ -46,8 +38,6 @@ import org.slf4j.LoggerFactory;
  */
 public class LowMemorySamePaddingConvolutionalAxonsImpl implements ConvolutionalAxons {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(LowMemorySamePaddingConvolutionalAxonsImpl.class);
-
 	/**
 	 * Default serialization id.
 	 */
@@ -56,376 +46,24 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 	private Neurons3D leftNeurons;
 	private Neurons3D rightNeurons;
 	private Axons3DConfig config;
-	private AxonWeights weights;
-
-	public LowMemorySamePaddingConvolutionalAxonsImpl(Neurons3D leftNeurons, Neurons3D rightNeurons, AxonWeights weights,
-			Axons3DConfig config) {
+	private AxonWeights convolutionalAxonWeights;
+	
+	public LowMemorySamePaddingConvolutionalAxonsImpl(Neurons3D leftNeurons, Neurons3D rightNeurons,
+			Axons3DConfig config, AxonWeights convolutionalAxonWeights) {
+		super();
 		this.leftNeurons = leftNeurons;
 		this.rightNeurons = rightNeurons;
 		this.config = config;
-		this.weights = weights;
+		this.convolutionalAxonWeights = convolutionalAxonWeights;
 	}
 
-	public LowMemorySamePaddingConvolutionalAxonsImpl(MatrixFactory matrixFactory, Neurons3D leftNeurons, Neurons3D rightNeurons,
-			Axons3DConfig config, WeightsMatrix connectionWeights, BiasMatrix leftToRightBiases, BiasMatrix rightToLeftBiases) {
-		this.leftNeurons = leftNeurons;
-		this.rightNeurons = rightNeurons;
-		this.config = config;
-		this.weights = createInitialAxonWeights(matrixFactory, connectionWeights, leftToRightBiases, rightToLeftBiases);
-	}
-
-	@Override
-	public void adjustAxonWeights(AxonWeightsAdjustment adjustment,
-			AxonWeightsAdjustmentDirection adjustmentDirection) {
-		weights.adjustWeights(adjustment, adjustmentDirection);
-	}
-
-	@Override
-	public Neurons3D getLeftNeurons() {
-		return leftNeurons;
-	}
-
-	@Override
-	public Neurons3D getRightNeurons() {
-		return rightNeurons;
-	}
-
-	private NeuronsActivation getPostDropoutInput(NeuronsActivation inputMatrix, int exampleCount,
-			AxonsContext axonsContext) {
-
-		NeuronsActivation reformatted = reformatLeftToRightInput(axonsContext.getMatrixFactory(), inputMatrix);
-		reformatted.setImmutable(true);
-
-		return reformatted;
-	}
-
-	public NeuronsActivation reformatLeftToRightInput(MatrixFactory matrixFactory,
-			NeuronsActivation leftNeuronsActivation) {
-		int inputWidth = leftNeurons.getWidth();
-		int inputHeight = leftNeurons.getHeight();
-		int outputWidth = rightNeurons.getWidth();
-		int outputHeight = rightNeurons.getHeight();
-
-		int inputWidthWithPadding = inputWidth + config.getPaddingWidth() * 2;
-
-		int inputHeightWithPadding = inputHeight + config.getPaddingHeight() * 2;
-		int filterWidth = inputWidthWithPadding + (1 - outputWidth) * (config.getStrideWidth());
-
-		int filterHeight = inputHeightWithPadding + (1 - outputHeight) * (config.getStrideHeight());
-
-		final NeuronsActivation reformatted;
-		ImageNeuronsActivation imageAct = leftNeuronsActivation.asImageNeuronsActivation(leftNeurons, DimensionScope.INPUT);
-		reformatted = new NeuronsActivationImpl(
-				new Neurons(leftNeurons.getDepth() * filterWidth * filterHeight, leftNeurons.hasBiasUnit()),
-				imageAct.im2ColConv(matrixFactory, filterHeight, filterWidth, config.getStrideHeight(),
-						config.getStrideWidth(), config.getPaddingHeight(), config.getPaddingWidth()),
-				ImageNeuronsActivationFormat.ML4J_IM_TO_COL_CONV_FORMAT);
-		if (!imageAct.isImmutable()) {
-			imageAct.close();
-		}
-
-		return reformatted;
-
-	}
-
-	@Override
-	public AxonsActivation pushLeftToRight(NeuronsActivation inputMatrix, AxonsActivation previousRightToLeftActivation,
-			AxonsContext axonsContext) {
-
-		ImageNeuronsActivationFormat featureOrientation = ImageNeuronsActivationFormat.ML4J_DEFAULT_IMAGE_FORMAT;
-
-		int exampleCount = inputMatrix.getExampleCount();
-
-		LOGGER.debug("Pushing left to right through Conv axons:" + inputMatrix.getFeatureCount() + ":"
-				+ inputMatrix.getExampleCount() + ":" + featureOrientation);
-
-		inputMatrix.setImmutable(true);
-
-		Supplier<NeuronsActivation> postDropoutInput = () -> getPostDropoutInput(inputMatrix, exampleCount,
-				axonsContext);
-
-		Matrix kernelMatrix = weights.getConnectionWeights().getWeights();
-		Matrix biasMatrix = weights.getLeftToRightBiases() == null ? null : weights.getLeftToRightBiases().getWeights();
-
-		ImageNeuronsActivation convolution = performConvolution(inputMatrix, axonsContext, kernelMatrix, biasMatrix,
-				leftNeurons, rightNeurons);
-
-		return new AxonsActivationImpl(this, null, postDropoutInput, convolution);
-
-	}
-
-	private ImageNeuronsActivation performConvolution(NeuronsActivation inputMatrix, AxonsContext axonsContext,
-			Matrix kernelMatrix, Matrix biasMatrix, Neurons3D leftNeurons, Neurons3D rightNeurons) {
-
-		LOGGER.debug("Pushing left to right through FC axons");
-
-		int examples = inputMatrix.getExampleCount();
-		int outputChannels = rightNeurons.getDepth();
-		int inputChannels = leftNeurons.getDepth();
-
-		int inputWidth = leftNeurons.getWidth();
-		int inputHeight = leftNeurons.getHeight();
-		int outputWidth = rightNeurons.getWidth();
-		int outputHeight = rightNeurons.getHeight();
-
-		int inputWidthWithPadding = inputWidth + config.getPaddingWidth() * 2;
-		int inputHeightWithPadding = inputHeight + config.getPaddingHeight() * 2;
-		int kernelWidth = inputWidthWithPadding + (1 - outputWidth) * (config.getStrideWidth());
-		int kernelHeight = inputHeightWithPadding + (1 - outputHeight) * (config.getStrideHeight());
-
-		int m = rightNeurons.getDepth();
-
-		float f = ((float) kernelWidth) / ((float) (inputHeight + inputWidth));
-		int delta = (int) Math.ceil((double) f);
-		float[] targetData = new float[(m + 2 * delta) * inputWidth * inputHeight * examples];
-
-		NeuronsActivation inputMat = inputMatrix;
-
-		RowMajorFloatArrayMatrix k = null;
-		int targetOffset = 0;
-		float[] inputData = null;
-		float alpha = 1f;
-		float beta = 1f;
-		float[] kData = null;
-
-		// Kernel matrix is output channels * input channels, height, width,
-		Matrix kernelMatrixNew = kernelMatrix;
-
-		Matrix inputMatDup = inputMat.getActivations(axonsContext.getMatrixFactory());
-
-		kernelMatrixNew = kernelMatrixNew.softDup();
-		kernelMatrixNew.asEditableMatrix().reshape(outputChannels * inputChannels, kernelHeight * kernelWidth);
-		kernelMatrixNew = kernelMatrixNew.transpose();
-
-		for (int h = 0; h < kernelHeight; h++) {
-			for (int w = 0; w < kernelWidth; w++) {
-				float[] rowS = null;
-				float[] rowE = null;
-				float[] colS = null;
-				float[] colE = null;
-
-				Matrix row = kernelMatrixNew.getRow(h * kernelWidth + w);
-				row.asEditableMatrix().reshape(outputChannels, inputChannels);
-				Matrix row2 = row;
-				kData = row2.getRowByRowArray();
-				k = new RowMajorFloatArrayMatrix(new FloatArray(kData, 0), outputChannels, inputChannels);
-
-				Matrix mat = inputMatDup;
-
-				inputData = mat.getRowByRowArray();
-
-				synchronized (inputData) {
-
-					if (h == 0) {
-						rowS = zeroRow(inputData, inputWidth, inputHeight, inputChannels, examples, inputHeight - 1);
-					} else if (h == (kernelHeight - 1)) {
-						rowE = zeroRow(inputData, inputWidth, inputHeight, inputChannels, examples, 0);
-					}
-					if (w == 0) {
-						colS = zeroColumn(inputData, inputWidth, inputHeight, inputChannels, examples, inputWidth - 1);
-					} else if (w == (kernelWidth - 1)) {
-						colE = zeroColumn(inputData, inputWidth, inputHeight, inputChannels, examples, 0);
-					}
-
-					int z = kernelWidth / 2;
-
-					int halfFilterHeightIndex = kernelHeight / 2;
-					int halfFilterWidthIndex = kernelWidth / 2;
-
-					int otTimesExamples = delta * (inputWidth * inputHeight * examples)
-							- z * ((halfFilterHeightIndex * inputWidth) + halfFilterWidthIndex + 1) * examples;
-					targetOffset = otTimesExamples + z * ((h * inputWidth) + w + 1) * examples;
-
-					int targetOffsetAdj = (targetOffset - delta * (inputWidth * inputHeight * examples));
-
-					int targetOffsetAdjNegated = -targetOffsetAdj;
-					targetOffset = targetOffsetAdjNegated + delta * (inputWidth * inputHeight * examples);
-
-					RowMajorFloatArrayMatrix b = new RowMajorFloatArrayMatrix(new FloatArray(inputData, 0), inputChannels,
-							inputWidth * inputHeight * examples);
-
-					JBlasRowMajorMatrixOptimised.gemm(alpha, k, b, beta,
-							new RowMajorFloatArrayMatrix(new FloatArray(targetData, targetOffset), outputChannels,
-									inputWidth * inputHeight * examples));
-
-					if (rowS != null) {
-						resetRow(inputData, inputWidth, inputHeight, inputChannels, examples, inputHeight - 1, rowS);
-					}
-					if (rowE != null) {
-						resetRow(inputData, inputWidth, inputHeight, inputChannels, examples, 0, rowE);
-					}
-					if (colS != null) {
-						resetColumn(inputData, inputWidth, inputHeight, inputChannels, examples, inputWidth - 1, colS);
-					}
-					if (colE != null) {
-						resetColumn(inputData, inputWidth, inputHeight, inputChannels, examples, 0, colE);
-					}
-				}
-			}
-		}
-
-		LOGGER.debug("End left to right pushing through FC axons");
-
-		LOGGER.debug("End Pushing left to right through Conv axons");
-		if (leftNeurons.hasBiasUnit() && biasMatrix != null) {
-			return createOutputActivationByCopyingData(axonsContext.getMatrixFactory(), targetData, inputWidth,
-					inputHeight, outputChannels, examples, delta, biasMatrix);
-		} else {
-			return createOutputActivationByReferencingData(targetData, inputWidth, inputHeight, outputChannels,
-					examples, delta, rightNeurons);
-		}
-
-	}
-
-	private ImageNeuronsActivation createOutputActivationByReferencingData(float[] targetData, int inputWidth,
-			int inputHeight, int outputChannels, int examples, int delta, Neurons3D rightNeurons) {
-		Images outputImage = new MultiChannelImages(targetData, delta * inputWidth * inputHeight * examples,
-				outputChannels, inputHeight, inputWidth, 0, 0, examples);
-		return new ImageNeuronsActivationImpl(rightNeurons, outputImage,
-				ImageNeuronsActivationFormat.ML4J_DEFAULT_IMAGE_FORMAT, false);
-
-	}
-
-	private ImageNeuronsActivation createOutputActivationByCopyingData(MatrixFactory matrixFactory, float[] targetData,
-			int inputWidth, int inputHeight, int outputChannels, int examples, int delta, Matrix biasMatrix) {
-		Matrix outFinal = matrixFactory.createMatrix(outputChannels, inputWidth * inputHeight * examples);
-
-		float[] outFinalData = outFinal.getRowByRowArray();
-
-		System.arraycopy(targetData, delta * inputWidth * inputHeight * examples, outFinalData, 0,
-				outputChannels * inputWidth * inputHeight * examples);
-
-		outFinal.asEditableMatrix().reshape(outputChannels * inputWidth * inputHeight, examples);
-		if (biasMatrix != null) {
-			outFinal.asEditableMatrix().addiColumnVector(biasMatrix);
-		}
-
-		return new ImageNeuronsActivationImpl(outFinal, rightNeurons,
-				ImageNeuronsActivationFormat.ML4J_DEFAULT_IMAGE_FORMAT, false);
-
-	}
-
-	private float[] zeroColumn(float[] data, int width, int height, int inputChannels, int examples, int c) {
-		float[] oldValues = new float[inputChannels * width * examples];
-		int index = 0;
-		for (int i = 0; i < inputChannels; i++) {
-			for (int h = 0; h < height; h++) {
-				int startInd = i * height * width * examples + h * width * examples + c * examples;
-				for (int e = 0; e < examples; e++) {
-					oldValues[index] = data[startInd + e];
-					data[startInd + e] = 0;
-					index++;
-				}
-			}
-		}
-		return oldValues;
-	}
-
-	private float[] resetColumn(float[] data, int width, int height, int inputChannels, int examples, int c,
-			float[] oldValues) {
-		int index = 0;
-		for (int i = 0; i < inputChannels; i++) {
-			for (int h = 0; h < height; h++) {
-				int startInd = i * height * width * examples + h * width * examples + c * examples;
-				for (int e = 0; e < examples; e++) {
-					data[startInd + e] = oldValues[index];
-					index++;
-				}
-			}
-		}
-		return oldValues;
-	}
-
-	private float[] zeroRow(float[] data, int width, int height, int inputChannels, int examples, int r) {
-		float[] oldValues = new float[inputChannels * width * examples];
-		int index = 0;
-		for (int i = 0; i < inputChannels; i++) {
-			for (int w = 0; w < width; w++) {
-				int startInd = i * height * width * examples + (r * width) * examples + w * examples;
-				for (int e = 0; e < examples; e++) {
-					data[startInd + e] = 0;
-					oldValues[index] = data[startInd + e];
-					index++;
-				}
-			}
-		}
-		return oldValues;
-	}
-
-	private float[] resetRow(float[] data, int width, int height, int inputChannels, int examples, int r,
-			float[] oldValues) {
-		int index = 0;
-		for (int i = 0; i < inputChannels; i++) {
-			for (int w = 0; w < width; w++) {
-				int startInd = i * height * width * examples + (r * width) * examples + w * examples;
-				for (int e = 0; e < examples; e++) {
-					data[startInd + e] = oldValues[index];
-					index++;
-				}
-			}
-		}
-		return oldValues;
-	}
-
-	@Override
-	public AxonsActivation pushRightToLeft(NeuronsActivation rightNeuronsActivation,
-			AxonsActivation previousLeftToRightActivation, AxonsContext axonsContext) {
-
-		
-		Matrix kernelMatrix = getReversedKernel(axonsContext.getMatrixFactory(), leftNeurons, rightNeurons,
-				weights.getConnectionWeights().getWeights(), config.getPaddingWidth(), config.getPaddingHeight(),
-				config.getStrideWidth(), config.getStrideHeight());
-		Matrix biasMatrix = weights.getRightToLeftBiases() == null ? null : weights.getRightToLeftBiases().getWeights();
-
-		ImageNeuronsActivation convolution = performConvolution(rightNeuronsActivation, axonsContext, kernelMatrix,
-				biasMatrix, rightNeurons, leftNeurons);
-
-		reformatRightToLeftInput(axonsContext.getMatrixFactory(), rightNeuronsActivation);
-
-		rightNeuronsActivation.setImmutable(true);
-		
-		return new AxonsActivationImpl(this, null, () -> rightNeuronsActivation, convolution);
-	}
-
-	public NeuronsActivation reformatRightToLeftInput(MatrixFactory matrixFactory, NeuronsActivation input) {
-
-		if (input.isImmutable()) {
-			throw new UnsupportedOperationException();
-		} else {
-			input.reshape(rightNeurons.getDepth(),
-					rightNeurons.getWidth() * rightNeurons.getHeight() * input.getExampleCount());
-			return input;
-		}
-	}
-
-	private static Matrix getReversedKernel(MatrixFactory matrixFactory, Neurons3D leftNeurons, Neurons3D rightNeurons,
-			Matrix kernel, int paddingWidth, int paddingHeight, int strideWidth, int strideHeight) {
-		float[] data = kernel.getRowByRowArray();
-		float[] reversedData = new float[data.length];
-		int inputWidthWithPadding = leftNeurons.getWidth() + paddingWidth * 2;
-		int inputHeightWithPadding = leftNeurons.getHeight() + paddingHeight * 2;
-		int filterWidth = inputWidthWithPadding + (1 - rightNeurons.getWidth()) * (strideWidth);
-		int filterHeight = inputHeightWithPadding + (1 - rightNeurons.getHeight()) * (strideHeight);
-
-		for (int o = 0; o < rightNeurons.getDepth(); o++) {
-			for (int i = 0; i < leftNeurons.getDepth(); i++) {
-				int start1 = o * leftNeurons.getDepth() * filterWidth * filterHeight + i * filterWidth * filterHeight;
-				int start2 = i * rightNeurons.getDepth() * filterWidth * filterHeight + o * filterWidth * filterHeight;
-
-				int end2 = start2 + filterHeight * filterWidth - 1;
-
-				for (int h = 0; h < filterHeight; h++) {
-					for (int w = 0; w < filterWidth; w++) {
-						int offset = h * filterWidth + w;
-						reversedData[start1 + offset] = data[end2 - offset];
-					}
-				}
-			}
-		}
-		return matrixFactory.createMatrixFromRowsByRowsArray(kernel.getRows(), kernel.getColumns(), reversedData);
+	public LowMemorySamePaddingConvolutionalAxonsImpl(MatrixFactory matrixFactory, Neurons3D leftNeurons, Neurons3D rightNeurons, Axons3DConfig config,
+			WeightsMatrix weightsMatrix, BiasMatrix biasMatrix) {
+		this(leftNeurons, rightNeurons, config, 
+				createInitialAxonWeights(matrixFactory, leftNeurons, rightNeurons, config, weightsMatrix, biasMatrix));
 	}
 	
-	private AxonWeights createInitialAxonWeights(MatrixFactory matrixFactory, WeightsMatrix connectionWeights, BiasMatrix leftToRightBiases, BiasMatrix rightToLeftBiases) {
+	private static AxonWeights createInitialAxonWeights(MatrixFactory matrixFactory, Neurons3D leftNeurons, Neurons3D rightNeurons, Axons3DConfig config, WeightsMatrix connectionWeights, BiasMatrix leftToRightBiases) {
 		int inputWidth = leftNeurons.getWidth();
 		int inputHeight = leftNeurons.getHeight();
 		int outputWidth = rightNeurons.getWidth();
@@ -452,25 +90,105 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 		Optional<Matrix> initialLeftToRightBiases = leftToRightBiases == null
 				? axonWeightsInitialiser.getInitialLeftToRightBiases(matrixFactory)
 				: Optional.of(leftToRightBiases.getWeights());
-		Optional<Matrix> initialRightToLeftBiases = rightToLeftBiases == null
-				? axonWeightsInitialiser.getInitialRightToLeftBiases(matrixFactory)
-				: Optional.of(rightToLeftBiases.getWeights());
+				
+		return new LowMemorySamePaddingConvolutionalAxonWeightsImpl(leftNeurons, 
+				rightNeurons, config, new WeightsMatrixImpl(initialConnectionWeights,
+						connectionWeights.getFormat()), leftNeurons.hasBiasUnit() && initialLeftToRightBiases.isPresent() ? new BiasMatrixImpl(initialLeftToRightBiases.get())
+						: null);		
+			
+	}
+	
+	
 
-		return new FullyConnectedAxonWeightsImpl(filterWidth * filterHeight * leftNeurons.getDepth(),
-				rightNeurons.getDepth(), 
-				new WeightsMatrixImpl(initialConnectionWeights,
-						new WeightsFormatImpl(
-				Arrays.asList(Dimension.INPUT_DEPTH, Dimension.FILTER_HEIGHT, Dimension.FILTER_WIDTH), Arrays.asList(Dimension.OUTPUT_DEPTH),
-				WeightsMatrixOrientation.ROWS_SPAN_OUTPUT_DIMENSIONS)),
-				leftNeurons.hasBiasUnit() && initialLeftToRightBiases.isPresent() ? new BiasMatrixImpl(initialLeftToRightBiases.get())
-						: null,
-				rightNeurons.hasBiasUnit() && initialRightToLeftBiases.isPresent() ? new BiasMatrixImpl(initialRightToLeftBiases.get())
-						: null);
+	@Override
+	public void adjustAxonWeights(AxonWeightsAdjustment adjustment,
+			AxonWeightsAdjustmentDirection adjustmentDirection) {
+		convolutionalAxonWeights.adjustWeights(adjustment, adjustmentDirection);
+	}
+
+	@Override
+	public Neurons3D getLeftNeurons() {
+		return leftNeurons;
+	}
+
+	@Override
+	public Neurons3D getRightNeurons() {
+		return rightNeurons;
+	}
+
+	public NeuronsActivation reformatLeftToRightInput(MatrixFactory matrixFactory,
+			NeuronsActivation leftNeuronsActivation) {
+		int inputWidth = leftNeurons.getWidth();
+		int inputHeight = leftNeurons.getHeight();
+		int outputWidth = rightNeurons.getWidth();
+		int outputHeight = rightNeurons.getHeight();
+
+		int inputWidthWithPadding = inputWidth + config.getPaddingWidth() * 2;
+
+		int inputHeightWithPadding = inputHeight + config.getPaddingHeight() * 2;
+		int filterWidth = inputWidthWithPadding + (1 - outputWidth) * (config.getStrideWidth());
+
+		int filterHeight = inputHeightWithPadding + (1 - outputHeight) * (config.getStrideHeight());
+
+		final NeuronsActivation reformatted;
+			ImageNeuronsActivation imageAct = leftNeuronsActivation.asImageNeuronsActivation(leftNeurons, DimensionScope.INPUT);
+			reformatted = new NeuronsActivationImpl(
+					new Neurons(leftNeurons.getDepth() * filterWidth * filterHeight, leftNeurons.hasBiasUnit()),
+					imageAct.im2ColConv(matrixFactory, filterHeight, filterWidth, config.getStrideHeight(),
+							config.getStrideWidth(), config.getPaddingHeight(), config.getPaddingWidth()),
+					ImageNeuronsActivationFormat.ML4J_IM_TO_COL_CONV_FORMAT);
+			if (!imageAct.isImmutable()) {
+				imageAct.close();
+			}
+	
+		reformatted.setImmutable(true);
+
+		return reformatted;
+
+	}
+
+	@Override
+	public AxonsActivation pushLeftToRight(NeuronsActivation leftNeuronsActivation,
+			AxonsActivation previousRightToLeftActivation, AxonsContext axonsContext) {
+
+		leftNeuronsActivation.setImmutable(true);
+
+		NeuronsActivation output = convolutionalAxonWeights.applyToLeftToRightInput(leftNeuronsActivation.dup(), axonsContext);
+		
+		Supplier<NeuronsActivation> reformattedSupplier = () -> reformatLeftToRightInput(axonsContext.getMatrixFactory(),
+				leftNeuronsActivation);
+
+		if (!leftNeuronsActivation.isImmutable()) {
+			leftNeuronsActivation.close();
+		}
+
+		return new AxonsActivationImpl(this, null, reformattedSupplier, output);
+	}
+
+	@Override
+	public AxonsActivation pushRightToLeft(NeuronsActivation rightNeuronsActivation,
+			AxonsActivation previousLeftToRightActivation, AxonsContext axonsContext) {
+
+		NeuronsActivation output = convolutionalAxonWeights.applyToRightToLeftInput(rightNeuronsActivation, axonsContext);
+		reformatRightToLeftInput(axonsContext.getMatrixFactory(), rightNeuronsActivation);
+		rightNeuronsActivation.setImmutable(true);
+		return new AxonsActivationImpl(this, null, () -> rightNeuronsActivation, output);
+	}
+	
+	public NeuronsActivation reformatRightToLeftInput(MatrixFactory matrixFactory, NeuronsActivation input) {
+
+		if (input.isImmutable()) {
+			throw new UnsupportedOperationException();
+		} else {
+			input.reshape(rightNeurons.getDepth(),
+					rightNeurons.getWidth() * rightNeurons.getHeight() * input.getExampleCount());
+			return input;
+		}
 	}
 
 	@Override
 	public ConvolutionalAxons dup() {
-		return new LowMemorySamePaddingConvolutionalAxonsImpl(leftNeurons, rightNeurons, weights, config.dup());
+		return new LowMemorySamePaddingConvolutionalAxonsImpl(leftNeurons, rightNeurons, config.dup(), convolutionalAxonWeights.dup());
 	}
 
 	@Override
@@ -480,7 +198,7 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 
 	@Override
 	public AxonWeights getDetachedAxonWeights() {
-		return weights.dup();
+		return convolutionalAxonWeights.dup();
 	}
 
 	@Override
@@ -490,11 +208,13 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 
 	@Override
 	public Optional<NeuronsActivationFormat<?>> optimisedFor() {
-		return Optional.empty();
+		return convolutionalAxonWeights.optimisedFor();
 	}
 
 	@Override
 	public boolean isSupported(NeuronsActivationFormat<?> format) {
-		return ImageNeuronsActivationFormat.ML4J_DEFAULT_IMAGE_FORMAT.equals(format);
+		return convolutionalAxonWeights.isSupported(format) 
+				&& NeuronsActivationFeatureOrientation.ROWS_SPAN_FEATURE_SET
+			.equals(format.getFeatureOrientation());
 	}
 }
