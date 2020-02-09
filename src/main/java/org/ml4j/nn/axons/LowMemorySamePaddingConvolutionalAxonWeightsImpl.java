@@ -158,6 +158,7 @@ public class LowMemorySamePaddingConvolutionalAxonWeightsImpl extends AxonWeight
 		Matrix inputMatDup = inputMat.getActivations(axonsContext.getMatrixFactory());
 
 		kernelMatrixNew = kernelMatrixNew.softDup();
+
 		kernelMatrixNew.asEditableMatrix().reshape(outputChannels * inputChannels, kernelHeight * kernelWidth);
 		kernelMatrixNew = kernelMatrixNew.transpose();
 

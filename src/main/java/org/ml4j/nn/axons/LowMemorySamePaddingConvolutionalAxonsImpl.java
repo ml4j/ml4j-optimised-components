@@ -72,14 +72,15 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 		if (connectionWeights == null) {
 			throw new IllegalArgumentException("WeightsMatrix cannot be null");
 		}
-
+		
 		int inputWidthWithPadding = inputWidth + config.getPaddingWidth() * 2;
 
 		int inputHeightWithPadding = inputHeight + config.getPaddingHeight() * 2;
 		int filterWidth = inputWidthWithPadding + (1 - outputWidth) * (config.getStrideWidth());
 
 		int filterHeight = inputHeightWithPadding + (1 - outputHeight) * (config.getStrideHeight());
-
+		
+		
 		AxonWeightsInitialiser axonWeightsInitialiser = new DefaultFullyConnectedAxonWeightsInitialiser(
 				new Neurons(filterWidth * filterHeight * leftNeurons.getDepth(), leftNeurons.hasBiasUnit()),
 				new Neurons(rightNeurons.getDepth(), rightNeurons.hasBiasUnit()));
@@ -87,6 +88,7 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 		Matrix initialConnectionWeights = connectionWeights.getWeights() == null
 				? axonWeightsInitialiser.getInitialConnectionWeights(matrixFactory)
 				: connectionWeights.getWeights();
+							
 		Optional<Matrix> initialLeftToRightBiases = leftToRightBiases == null
 				? axonWeightsInitialiser.getInitialLeftToRightBiases(matrixFactory)
 				: Optional.of(leftToRightBiases.getWeights());
