@@ -83,8 +83,7 @@ public class LowMemorySamePaddingConvolutionalAxonWeightsImpl extends AxonWeight
 	public NeuronsActivation applyToRightToLeftInput(NeuronsActivation input, AxonsContext axonsContext) {
 		
 		Matrix kernelMatrix = getReversedKernel(axonsContext.getMatrixFactory(), leftNeurons, rightNeurons,
-				getConnectionWeights().getWeights(), config.getPaddingWidth(), config.getPaddingHeight(),
-				config.getStrideWidth(), config.getStrideHeight());
+				getConnectionWeights().getWeights(), config);
 		Matrix biasMatrix = getRightToLeftBiases() == null ? null : getRightToLeftBiases().getWeights();
 
 		return performConvolution(input, axonsContext, kernelMatrix,
@@ -92,13 +91,12 @@ public class LowMemorySamePaddingConvolutionalAxonWeightsImpl extends AxonWeight
 	}
 	
 	private static Matrix getReversedKernel(MatrixFactory matrixFactory, Neurons3D leftNeurons, Neurons3D rightNeurons,
-			Matrix kernel, int paddingWidth, int paddingHeight, int strideWidth, int strideHeight) {
+			Matrix kernel, Axons3DConfig config) {
 		float[] data = kernel.getRowByRowArray();
 		float[] reversedData = new float[data.length];
-		int inputWidthWithPadding = leftNeurons.getWidth() + paddingWidth * 2;
-		int inputHeightWithPadding = leftNeurons.getHeight() + paddingHeight * 2;
-		int filterWidth = inputWidthWithPadding + (1 - rightNeurons.getWidth()) * (strideWidth);
-		int filterHeight = inputHeightWithPadding + (1 - rightNeurons.getHeight()) * (strideHeight);
+
+		int filterWidth = config.getFilterWidth();
+		int filterHeight = config.getFilterHeight();
 
 		for (int o = 0; o < rightNeurons.getDepth(); o++) {
 			for (int i = 0; i < leftNeurons.getDepth(); i++) {
