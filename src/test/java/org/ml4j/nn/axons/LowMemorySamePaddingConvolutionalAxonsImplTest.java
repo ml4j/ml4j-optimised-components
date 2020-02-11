@@ -13,12 +13,14 @@ import org.ml4j.nn.neurons.NeuronsActivationImpl;
 import org.ml4j.nn.neurons.format.ImageNeuronsActivationFormat;
 import org.ml4j.nn.neurons.format.features.Dimension;
 import org.mockito.Mockito;
+import org.mockito.MockitoAnnotations;
 
 public class LowMemorySamePaddingConvolutionalAxonsImplTest extends Axons3DTestBase<ConvolutionalAxons> {
 
 	@Before
 	@Override
 	public void setUp() {
+		MockitoAnnotations.initMocks(this);
 		super.setUp();
 		Mockito.when(mockAxonsContext.getMatrixFactory()).thenReturn(matrixFactory);
 		this.mockLeftToRightInputActivation = createNeuronsActivation(784 * 3, 32);

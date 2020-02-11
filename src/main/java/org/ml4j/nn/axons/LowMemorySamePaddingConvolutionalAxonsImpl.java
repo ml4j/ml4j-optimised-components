@@ -54,6 +54,7 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 		this.leftNeurons = leftNeurons;
 		this.rightNeurons = rightNeurons;
 		this.config = config;
+		this.config.setFilterWidthAndHeight(leftNeurons, rightNeurons);
 		this.convolutionalAxonWeights = convolutionalAxonWeights;
 	}
 
@@ -64,25 +65,13 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 	}
 	
 	private static AxonWeights createInitialAxonWeights(MatrixFactory matrixFactory, Neurons3D leftNeurons, Neurons3D rightNeurons, Axons3DConfig config, WeightsMatrix connectionWeights, BiasMatrix leftToRightBiases) {
-		int inputWidth = leftNeurons.getWidth();
-		int inputHeight = leftNeurons.getHeight();
-		int outputWidth = rightNeurons.getWidth();
-		int outputHeight = rightNeurons.getHeight();
 		
 		if (connectionWeights == null) {
 			throw new IllegalArgumentException("WeightsMatrix cannot be null");
 		}
 		
-		int inputWidthWithPadding = inputWidth + config.getPaddingWidth() * 2;
-
-		int inputHeightWithPadding = inputHeight + config.getPaddingHeight() * 2;
-		int filterWidth = inputWidthWithPadding + (1 - outputWidth) * (config.getStrideWidth());
-
-		int filterHeight = inputHeightWithPadding + (1 - outputHeight) * (config.getStrideHeight());
-		
-		
 		AxonWeightsInitialiser axonWeightsInitialiser = new DefaultFullyConnectedAxonWeightsInitialiser(
-				new Neurons(filterWidth * filterHeight * leftNeurons.getDepth(), leftNeurons.hasBiasUnit()),
+				new Neurons(config.getFilterWidth() * config.getFilterHeight() * leftNeurons.getDepth(), leftNeurons.hasBiasUnit()),
 				new Neurons(rightNeurons.getDepth(), rightNeurons.hasBiasUnit()));
 
 		Matrix initialConnectionWeights = connectionWeights.getWeights() == null
@@ -120,24 +109,12 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 
 	public NeuronsActivation reformatLeftToRightInput(MatrixFactory matrixFactory,
 			NeuronsActivation leftNeuronsActivation) {
-		int inputWidth = leftNeurons.getWidth();
-		int inputHeight = leftNeurons.getHeight();
-		int outputWidth = rightNeurons.getWidth();
-		int outputHeight = rightNeurons.getHeight();
-
-		int inputWidthWithPadding = inputWidth + config.getPaddingWidth() * 2;
-
-		int inputHeightWithPadding = inputHeight + config.getPaddingHeight() * 2;
-		int filterWidth = inputWidthWithPadding + (1 - outputWidth) * (config.getStrideWidth());
-
-		int filterHeight = inputHeightWithPadding + (1 - outputHeight) * (config.getStrideHeight());
 
 		final NeuronsActivation reformatted;
 			ImageNeuronsActivation imageAct = leftNeuronsActivation.asImageNeuronsActivation(leftNeurons, DimensionScope.INPUT);
 			reformatted = new NeuronsActivationImpl(
-					new Neurons(leftNeurons.getDepth() * filterWidth * filterHeight, leftNeurons.hasBiasUnit()),
-					imageAct.im2ColConv(matrixFactory, filterHeight, filterWidth, config.getStrideHeight(),
-							config.getStrideWidth(), config.getPaddingHeight(), config.getPaddingWidth()),
+					new Neurons(leftNeurons.getDepth() * config.getFilterWidth() * config.getFilterWidth(), leftNeurons.hasBiasUnit()),
+					imageAct.im2ColConv(matrixFactory, config),
 					ImageNeuronsActivationFormat.ML4J_IM_TO_COL_CONV_FORMAT);
 			if (!imageAct.isImmutable()) {
 				imageAct.close();
