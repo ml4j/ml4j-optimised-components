@@ -44,9 +44,9 @@ public class LowMemorySamePaddingConvolutionalAxonsImplTest extends Axons3DTestB
 		config.withFilterHeight(3);
 		config.withFilterWidth(3);
 		
-		return new LowMemorySamePaddingConvolutionalAxonsImpl(matrixFactory, leftNeurons, rightNeurons, config, 
-				new WeightsMatrixImpl(null, new WeightsFormatImpl(Arrays.asList(Dimension.OUTPUT_DEPTH), 
-						Arrays.asList(Dimension.INPUT_DEPTH, Dimension.FILTER_HEIGHT, Dimension.FILTER_WIDTH), 
+		return new LowMemorySamePaddingConvolutionalAxonsImpl(matrixFactory, config, 
+				new WeightsMatrixImpl(null, new WeightsFormatImpl(Arrays.asList(Dimension.OUTPUT_DEPTH),
+						Arrays.asList(Dimension.INPUT_DEPTH, Dimension.FILTER_HEIGHT, Dimension.FILTER_HEIGHT),
 						WeightsMatrixOrientation.ROWS_SPAN_OUTPUT_DIMENSIONS)), null);
 	}
 
