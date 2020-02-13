@@ -22,7 +22,6 @@ import org.ml4j.nn.axons.DefaultConvolutionalAxonsImpl;
 import org.ml4j.nn.axons.DefaultOneByOneConvolutionalAxonsImpl;
 import org.ml4j.nn.axons.LowMemorySamePaddingConvolutionalAxonsImpl;
 import org.ml4j.nn.axons.WeightsMatrix;
-import org.ml4j.nn.neurons.Neurons3D;
 
 /**
  * Custom implementation of DefaultAxonsFactoryImpl optimised for memory.
@@ -41,26 +40,16 @@ public class LowMemoryOptimisedDefaultAxonsFactoryImpl extends DefaultAxonsFacto
 	}
 
 	@Override
-	public ConvolutionalAxons createConvolutionalAxons(Neurons3D leftNeurons, Neurons3D rightNeurons,
+	public ConvolutionalAxons createConvolutionalAxons(
 			Axons3DConfig config, WeightsMatrix connectionWeights, BiasMatrix biases) {
-		int inputWidth = leftNeurons.getWidth();
-		int inputHeight = leftNeurons.getHeight();
-		int outputWidth = rightNeurons.getWidth();
-		int outputHeight = rightNeurons.getHeight();
-
-		int inputWidthWithPadding = inputWidth + config.getPaddingWidth() * 2;
-
-		int inputHeightWithPadding = inputHeight + config.getPaddingHeight() * 2;
-		int filterWidth = inputWidthWithPadding + (1 - outputWidth) * (config.getStrideWidth());
-
-		int filterHeight = inputHeightWithPadding + (1 - outputHeight) * (config.getStrideHeight());
-		if (DefaultOneByOneConvolutionalAxonsImpl.isEligible(leftNeurons, rightNeurons, config)) {
-			return new DefaultOneByOneConvolutionalAxonsImpl(this, leftNeurons, rightNeurons,  config, connectionWeights, biases);
-		} else if (filterHeight == filterWidth && config.getStrideHeight() == 1 && config.getStrideWidth() == 1 && leftNeurons.getWidth() == rightNeurons.getWidth() && leftNeurons.getHeight() == rightNeurons.getHeight()){
-			return new LowMemorySamePaddingConvolutionalAxonsImpl(matrixFactory, leftNeurons, rightNeurons, config, connectionWeights, biases);
+	
+		if (DefaultOneByOneConvolutionalAxonsImpl.isEligible(config)) {
+			return new DefaultOneByOneConvolutionalAxonsImpl(this, config, connectionWeights, biases);
+		} else if (config.getFilterHeight() == config.getFilterWidth() && config.getStrideHeight() == 1 && config.getStrideWidth() == 1 && config.getLeftNeurons().getWidth() == config.getRightNeurons().getWidth() && config.getLeftNeurons().getHeight() == config.getRightNeurons().getHeight()){
+			return new LowMemorySamePaddingConvolutionalAxonsImpl(matrixFactory, config, connectionWeights, biases);
 		}
 		else {
-			return new DefaultConvolutionalAxonsImpl(this, leftNeurons, rightNeurons, config, connectionWeights, biases);
+			return new DefaultConvolutionalAxonsImpl(this, config, connectionWeights, biases);
 		}
 	}
 }

@@ -43,36 +43,29 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 	 */
 	private static final long serialVersionUID = 1L;
 
-	private Neurons3D leftNeurons;
-	private Neurons3D rightNeurons;
 	private Axons3DConfig config;
 	private AxonWeights convolutionalAxonWeights;
 	
-	public LowMemorySamePaddingConvolutionalAxonsImpl(Neurons3D leftNeurons, Neurons3D rightNeurons,
-			Axons3DConfig config, AxonWeights convolutionalAxonWeights) {
-		super();
-		this.leftNeurons = leftNeurons;
-		this.rightNeurons = rightNeurons;
+	public LowMemorySamePaddingConvolutionalAxonsImpl(Axons3DConfig config, AxonWeights convolutionalAxonWeights) {
 		this.config = config;
-		this.config.setFilterWidthAndHeight(leftNeurons, rightNeurons);
 		this.convolutionalAxonWeights = convolutionalAxonWeights;
 	}
 
-	public LowMemorySamePaddingConvolutionalAxonsImpl(MatrixFactory matrixFactory, Neurons3D leftNeurons, Neurons3D rightNeurons, Axons3DConfig config,
+	public LowMemorySamePaddingConvolutionalAxonsImpl(MatrixFactory matrixFactory, Axons3DConfig config,
 			WeightsMatrix weightsMatrix, BiasMatrix biasMatrix) {
-		this(leftNeurons, rightNeurons, config, 
-				createInitialAxonWeights(matrixFactory, leftNeurons, rightNeurons, config, weightsMatrix, biasMatrix));
+		this(config, 
+				createInitialAxonWeights(matrixFactory, config, weightsMatrix, biasMatrix));
 	}
 	
-	private static AxonWeights createInitialAxonWeights(MatrixFactory matrixFactory, Neurons3D leftNeurons, Neurons3D rightNeurons, Axons3DConfig config, WeightsMatrix connectionWeights, BiasMatrix leftToRightBiases) {
+	private static AxonWeights createInitialAxonWeights(MatrixFactory matrixFactory, Axons3DConfig config, WeightsMatrix connectionWeights, BiasMatrix leftToRightBiases) {
 		
 		if (connectionWeights == null) {
 			throw new IllegalArgumentException("WeightsMatrix cannot be null");
 		}
 		
 		AxonWeightsInitialiser axonWeightsInitialiser = new DefaultFullyConnectedAxonWeightsInitialiser(
-				new Neurons(config.getFilterWidth() * config.getFilterHeight() * leftNeurons.getDepth(), leftNeurons.hasBiasUnit()),
-				new Neurons(rightNeurons.getDepth(), rightNeurons.hasBiasUnit()));
+				new Neurons(config.getFilterWidth() * config.getFilterHeight() * config.getLeftNeurons().getDepth(), config.getLeftNeurons().hasBiasUnit()),
+				new Neurons(config.getRightNeurons().getDepth(), config.getRightNeurons().hasBiasUnit()));
 
 		Matrix initialConnectionWeights = connectionWeights.getWeights() == null
 				? axonWeightsInitialiser.getInitialConnectionWeights(matrixFactory)
@@ -82,9 +75,9 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 				? axonWeightsInitialiser.getInitialLeftToRightBiases(matrixFactory)
 				: Optional.of(leftToRightBiases.getWeights());
 				
-		return new LowMemorySamePaddingConvolutionalAxonWeightsImpl(leftNeurons, 
-				rightNeurons, config, new WeightsMatrixImpl(initialConnectionWeights,
-						connectionWeights.getFormat()), leftNeurons.hasBiasUnit() && initialLeftToRightBiases.isPresent() ? new BiasMatrixImpl(initialLeftToRightBiases.get())
+		return new LowMemorySamePaddingConvolutionalAxonWeightsImpl(config.getLeftNeurons(), 
+				config.getRightNeurons(), config, new WeightsMatrixImpl(initialConnectionWeights,
+						connectionWeights.getFormat()), config.getLeftNeurons().hasBiasUnit() && initialLeftToRightBiases.isPresent() ? new BiasMatrixImpl(initialLeftToRightBiases.get())
 						: null);		
 			
 	}
@@ -99,21 +92,21 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 
 	@Override
 	public Neurons3D getLeftNeurons() {
-		return leftNeurons;
+		return config.getLeftNeurons();
 	}
 
 	@Override
 	public Neurons3D getRightNeurons() {
-		return rightNeurons;
+		return config.getRightNeurons();
 	}
 
 	public NeuronsActivation reformatLeftToRightInput(MatrixFactory matrixFactory,
 			NeuronsActivation leftNeuronsActivation) {
 
 		final NeuronsActivation reformatted;
-			ImageNeuronsActivation imageAct = leftNeuronsActivation.asImageNeuronsActivation(leftNeurons, DimensionScope.INPUT);
+			ImageNeuronsActivation imageAct = leftNeuronsActivation.asImageNeuronsActivation(config.getLeftNeurons(), DimensionScope.INPUT);
 			reformatted = new NeuronsActivationImpl(
-					new Neurons(leftNeurons.getDepth() * config.getFilterWidth() * config.getFilterWidth(), leftNeurons.hasBiasUnit()),
+					new Neurons(config.getLeftNeurons().getDepth() * config.getFilterWidth() * config.getFilterWidth(), config.getLeftNeurons().hasBiasUnit()),
 					imageAct.im2ColConv(matrixFactory, config),
 					ImageNeuronsActivationFormat.ML4J_IM_TO_COL_CONV_FORMAT);
 			if (!imageAct.isImmutable()) {
@@ -159,15 +152,15 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 		if (input.isImmutable()) {
 			throw new UnsupportedOperationException();
 		} else {
-			input.reshape(rightNeurons.getDepth(),
-					rightNeurons.getWidth() * rightNeurons.getHeight() * input.getExampleCount());
+			input.reshape(config.getRightNeurons().getDepth(),
+					config.getRightNeurons().getWidth() * config.getRightNeurons().getHeight() * input.getExampleCount());
 			return input;
 		}
 	}
 
 	@Override
 	public ConvolutionalAxons dup() {
-		return new LowMemorySamePaddingConvolutionalAxonsImpl(leftNeurons, rightNeurons, config.dup(), convolutionalAxonWeights.dup());
+		return new LowMemorySamePaddingConvolutionalAxonsImpl(config.dup(), convolutionalAxonWeights.dup());
 	}
 
 	@Override
