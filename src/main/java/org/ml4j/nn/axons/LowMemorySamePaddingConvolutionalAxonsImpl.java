@@ -52,12 +52,12 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 	}
 
 	public LowMemorySamePaddingConvolutionalAxonsImpl(MatrixFactory matrixFactory, Axons3DConfig config,
-			WeightsMatrix weightsMatrix, BiasMatrix biasMatrix) {
+			WeightsMatrix weightsMatrix, BiasVector biasMatrix) {
 		this(config, 
 				createInitialAxonWeights(matrixFactory, config, weightsMatrix, biasMatrix));
 	}
 	
-	private static AxonWeights createInitialAxonWeights(MatrixFactory matrixFactory, Axons3DConfig config, WeightsMatrix connectionWeights, BiasMatrix leftToRightBiases) {
+	private static AxonWeights createInitialAxonWeights(MatrixFactory matrixFactory, Axons3DConfig config, WeightsMatrix connectionWeights, BiasVector leftToRightBiases) {
 		
 		if (connectionWeights == null) {
 			throw new IllegalArgumentException("WeightsMatrix cannot be null");
@@ -67,17 +67,18 @@ public class LowMemorySamePaddingConvolutionalAxonsImpl implements Convolutional
 				new Neurons(config.getFilterWidth() * config.getFilterHeight() * config.getLeftNeurons().getDepth(), config.getLeftNeurons().hasBiasUnit()),
 				new Neurons(config.getRightNeurons().getDepth(), config.getRightNeurons().hasBiasUnit()));
 
-		Matrix initialConnectionWeights = connectionWeights.getWeights() == null
+		Matrix initialConnectionWeights = connectionWeights.getMatrix() == null
 				? axonWeightsInitialiser.getInitialConnectionWeights(matrixFactory)
-				: connectionWeights.getWeights();
+				: connectionWeights.getMatrix();
 							
 		Optional<Matrix> initialLeftToRightBiases = leftToRightBiases == null
 				? axonWeightsInitialiser.getInitialLeftToRightBiases(matrixFactory)
-				: Optional.of(leftToRightBiases.getWeights());
+				: Optional.of(leftToRightBiases.getVector());
 				
 		return new LowMemorySamePaddingConvolutionalAxonWeightsImpl(config.getLeftNeurons(), 
 				config.getRightNeurons(), config, new WeightsMatrixImpl(initialConnectionWeights,
-						connectionWeights.getFormat()), config.getLeftNeurons().hasBiasUnit() && initialLeftToRightBiases.isPresent() ? new BiasMatrixImpl(initialLeftToRightBiases.get())
+						connectionWeights.getFormat()), config.getLeftNeurons().hasBiasUnit() && initialLeftToRightBiases.isPresent() ? new BiasVectorImpl(initialLeftToRightBiases.get(),
+								FeaturesVectorFormat.DEFAULT_BIAS_FORMAT)
 						: null);		
 			
 	}

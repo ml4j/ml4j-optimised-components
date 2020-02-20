@@ -54,7 +54,7 @@ public class LowMemorySamePaddingConvolutionalAxonWeightsImpl extends AxonWeight
 	private Neurons3D rightNeurons;
 
 	public LowMemorySamePaddingConvolutionalAxonWeightsImpl(Neurons3D leftNeurons, Neurons3D rightNeurons, Axons3DConfig config, WeightsMatrix connectionWeights,
-			BiasMatrix leftToRightBiases) {
+			BiasVector leftToRightBiases) {
 		super(leftNeurons.getNeuronCountExcludingBias(), rightNeurons.getNeuronCountExcludingBias(), 
 				connectionWeights, leftToRightBiases, null, AxonWeightsType.CONVOLUTIONAL);
 		this.config = config;
@@ -71,9 +71,9 @@ public class LowMemorySamePaddingConvolutionalAxonWeightsImpl extends AxonWeight
 	@Override
 	public NeuronsActivation applyToLeftToRightInput(NeuronsActivation input, AxonsContext axonsContext) {
 		
-		Matrix kernelMatrix = getConnectionWeights().getWeights();
+		Matrix kernelMatrix = getConnectionWeights().getMatrix();
 		
-		Matrix biasMatrix = getLeftToRightBiases() == null ? null : getLeftToRightBiases().getWeights();
+		Matrix biasMatrix = getLeftToRightBiases() == null ? null : getLeftToRightBiases().getVector();
 
 		return performConvolution(input, axonsContext, kernelMatrix, biasMatrix,
 				leftNeurons, rightNeurons);
@@ -83,8 +83,8 @@ public class LowMemorySamePaddingConvolutionalAxonWeightsImpl extends AxonWeight
 	public NeuronsActivation applyToRightToLeftInput(NeuronsActivation input, AxonsContext axonsContext) {
 		
 		Matrix kernelMatrix = getReversedKernel(axonsContext.getMatrixFactory(), leftNeurons, rightNeurons,
-				getConnectionWeights().getWeights(), config);
-		Matrix biasMatrix = getRightToLeftBiases() == null ? null : getRightToLeftBiases().getWeights();
+				getConnectionWeights().getMatrix(), config);
+		Matrix biasMatrix = getRightToLeftBiases() == null ? null : getRightToLeftBiases().getVector();
 
 		return performConvolution(input, axonsContext, kernelMatrix,
 				biasMatrix, rightNeurons, leftNeurons);
