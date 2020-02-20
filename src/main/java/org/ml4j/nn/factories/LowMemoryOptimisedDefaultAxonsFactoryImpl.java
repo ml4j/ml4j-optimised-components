@@ -16,7 +16,7 @@ package org.ml4j.nn.factories;
 
 import org.ml4j.MatrixFactory;
 import org.ml4j.nn.axons.Axons3DConfig;
-import org.ml4j.nn.axons.BiasMatrix;
+import org.ml4j.nn.axons.BiasVector;
 import org.ml4j.nn.axons.ConvolutionalAxons;
 import org.ml4j.nn.axons.DefaultConvolutionalAxonsImpl;
 import org.ml4j.nn.axons.DefaultOneByOneConvolutionalAxonsImpl;
@@ -41,7 +41,7 @@ public class LowMemoryOptimisedDefaultAxonsFactoryImpl extends DefaultAxonsFacto
 
 	@Override
 	public ConvolutionalAxons createConvolutionalAxons(
-			Axons3DConfig config, WeightsMatrix connectionWeights, BiasMatrix biases) {
+			Axons3DConfig config, WeightsMatrix connectionWeights, BiasVector biases) {
 	
 		if (DefaultOneByOneConvolutionalAxonsImpl.isEligible(config)) {
 			return new DefaultOneByOneConvolutionalAxonsImpl(this, config, connectionWeights, biases);
